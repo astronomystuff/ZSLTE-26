@@ -1,5 +1,6 @@
 import rebound
 import numpy as np
+from horizons_loader import fetch_state
 
 # -----------------------------------------
 # CONFIG
@@ -8,6 +9,45 @@ START_JD = 2451545.0          # J2000
 YEARS = 10000000              # ±10 Myr
 DT = 1.0                      # 1 day
 STEPS = int(YEARS * 365.25 / DT)
+
+# Horizons IDs
+PLANET_IDS = {
+    "Mercury": 199,
+    "Venus": 299,
+    "Earth": 399,
+    "Mars": 499,
+    "Jupiter": 599,
+    "Saturn": 699,
+    "Uranus": 799,
+    "Neptune": 899
+}
+
+ASTEROID_IDS = {
+    "Ceres": 1,
+    "Pallas": 2,
+    "Vesta": 4,
+    "Hygiea": 10,
+    "Interamnia": 704
+}
+
+PLANET_MASSES = {
+    "Mercury": 1.651e-7,
+    "Venus":   2.447e-6,
+    "Earth":   3.003e-6,
+    "Mars":    3.227e-7,
+    "Jupiter": 9.545e-4,
+    "Saturn":  2.857e-4,
+    "Uranus":  4.365e-5,
+    "Neptune": 5.150e-5
+}
+
+ASTEROID_MASSES = {
+    "Ceres":      4.7e-10,
+    "Pallas":     1.1e-10,
+    "Vesta":      1.3e-10,
+    "Hygiea":     8.6e-11,
+    "Interamnia": 3.5e-11
+}
 
 # -----------------------------------------
 # CREATE SIMULATION
@@ -23,36 +63,38 @@ sim.dt = DT
 sim.add(m=1.0)
 
 # -----------------------------------------
-# ADD PLANETS (J2000 barycentric)
+# ADD PLANETS WITH REAL STATE VECTORS
 # -----------------------------------------
-# You will replace these with Horizons initial states
-planets = [
-    ("Mercury", 1.651e-7),
-    ("Venus",   2.447e-6),
-    ("Earth",   3.003e-6),
-    ("Mars",    3.227e-7),
-    ("Jupiter", 9.545e-4),
-    ("Saturn",  2.857e-4),
-    ("Uranus",  4.365e-5),
-    ("Neptune", 5.150e-5)
-]
+for name, pid in PLANET_IDS.items():
+    print(f"Fetching {name}...")
+    state = fetch_state(pid, epoch=str(START_JD))
 
-for name, mass in planets:
-    sim.add(m=mass)  # placeholder; you will add full state vectors
+    sim.add(
+        m=PLANET_MASSES[name],
+        x=state["x"],
+        y=state["y"],
+        z=state["z"],
+        vx=state["vx"],
+        vy=state["vy"],
+        vz=state["vz"]
+    )
 
 # -----------------------------------------
-# ADD BIG ASTEROIDS
+# ADD ASTEROIDS WITH REAL STATE VECTORS
 # -----------------------------------------
-asteroids = [
-    ("Ceres",      4.7e-10),
-    ("Vesta",      1.3e-10),
-    ("Pallas",     1.1e-10),
-    ("Hygiea",     8.6e-11),
-    ("Interamnia", 3.5e-11)
-]
+for name, aid in ASTEROID_IDS.items():
+    print(f"Fetching {name}...")
+    state = fetch_state(aid, epoch=str(START_JD))
 
-for name, mass in asteroids:
-    sim.add(m=mass)  # placeholder; you will add full state vectors
+    sim.add(
+        m=ASTEROID_MASSES[name],
+        x=state["x"],
+        y=state["y"],
+        z=state["z"],
+        vx=state["vx"],
+        vy=state["vy"],
+        vz=state["vz"]
+    )
 
 # -----------------------------------------
 # MOVE TO BARYCENTER
@@ -83,7 +125,7 @@ for i in range(STEPS):
     sim.step(DT)
     current_jd += DT
 
-    earth = sim.particles[3]  # example: Earth
+    earth = sim.particles[3]  # Earth is 4th after Sun
     out["jd"].append(current_jd)
     out["x"].append(earth.x)
     out["y"].append(earth.y)
