@@ -1,21 +1,16 @@
-const fs = require('fs');
-
 class solarSystemEngine {
     constructor() {
-        // Gravitational Constant: AU^3 / (Solar Mass * Day^2)
         this.gConstant = 2.959122082855911e-4;
-        // Speed of light: AU / Day
         this.cLight = 173.144543265;
         this.cSquare = this.cLight * this.cLight;
-        
         this.bodies = [];
     }
 
-    // Input positions/velocities must be Barycentric AU and AU/Day
-    addBody(name, mass, x, y, z, vx, vy, vz) {
+    addBody(name, mass, x, y, z, vx, vy, vz, isPerturberOnly = false) {
         this.bodies.push({
             name,
             mass,
+            isPerturberOnly,
             pos: new Float64Array([x, y, z]),
             vel: new Float64Array([vx, vy, vz]),
             acc: new Float64Array([0, 0, 0])
@@ -24,26 +19,21 @@ class solarSystemEngine {
 
     computeAccelerations() {
         const totalBodies = this.bodies.length;
-        
-        // 1. Reset accelerations
         for (let i = 0; i < totalBodies; i++) {
             this.bodies[i].acc.fill(0);
         }
 
-        // 2. Classical Newtonian Mutual Perturbations (O(N^2) in Barycentric space)
+        // Newtonian Mutual Perturbations
         for (let i = 0; i < totalBodies; i++) {
             const b1 = this.bodies[i];
             for (let j = i + 1; j < totalBodies; j++) {
                 const b2 = this.bodies[j];
-
                 const dx = b2.pos[0] - b1.pos[0];
                 const dy = b2.pos[1] - b1.pos[1];
                 const dz = b2.pos[2] - b1.pos[2];
-
                 const distSq = dx * dx + dy * dy + dz * dz;
                 const dist = Math.sqrt(distSq);
                 if (dist === 0) continue;
-
                 const forceMagnitude = this.gConstant / (distSq * dist);
 
                 b1.acc[0] += dx * (forceMagnitude * b2.mass);
@@ -56,13 +46,11 @@ class solarSystemEngine {
             }
         }
 
-        // 3. 1PN General Relativity Correction (Relative to Central Star at index 0)
+        // 1PN General Relativity
         const sun = this.bodies[0];
         const gMassSun = this.gConstant * sun.mass;
-
         for (let i = 1; i < totalBodies; i++) {
             const planet = this.bodies[i];
-
             const rx = planet.pos[0] - sun.pos[0];
             const ry = planet.pos[1] - sun.pos[1];
             const rz = planet.pos[2] - sun.pos[2];
@@ -96,17 +84,14 @@ class solarSystemEngine {
 
     step(dt) {
         const totalBodies = this.bodies.length;
-
         for (let i = 0; i < totalBodies; i++) {
             const b = this.bodies[i];
             b.pos[0] += b.vel[0] * dt + 0.5 * b.acc[0] * dt * dt;
             b.pos[1] += b.vel[1] * dt + 0.5 * b.acc[1] * dt * dt;
             b.pos[2] += b.vel[2] * dt + 0.5 * b.acc[2] * dt * dt;
         }
-
         const oldAcc = this.bodies.map(b => new Float64Array(b.acc));
         this.computeAccelerations();
-
         for (let i = 0; i < totalBodies; i++) {
             const b = this.bodies[i];
             b.vel[0] += 0.5 * (oldAcc[i][0] + b.acc[0]) * dt;
@@ -115,15 +100,16 @@ class solarSystemEngine {
         }
     }
 
-    generateEphemeris(totalYears, dtDays, snapshotIntervalYears, filename) {
-        this.computeAccelerations(); 
-
+    runTest(totalYears, dtDays, snapshotIntervalYears) {
+        this.computeAccelerations();
         const stepsPerYear = 365.25 / dtDays;
         const historyData = {};
-        
-        this.bodies.forEach(b => historyData[b.name] = []);
 
-        console.log(`Integrating physics using Barycentric math...`);
+        this.bodies.forEach(b => {
+            if (!b.isPerturberOnly) historyData[b.name] = [];
+        });
+
+        console.log(`Running ZSLTE-26 test simulation...`);
 
         for (let year = 0; year <= totalYears; year++) {
             for (let step = 0; step < stepsPerYear; step++) {
@@ -132,24 +118,35 @@ class solarSystemEngine {
 
             if (year % snapshotIntervalYears === 0) {
                 const sun = this.bodies[0];
-
                 this.bodies.forEach(b => {
-                    // Convert to Heliocentric by subtracting the Sun's Barycentric position
+                    if (b.isPerturberOnly) return;
                     const helioX = b.pos[0] - sun.pos[0];
                     const helioY = b.pos[1] - sun.pos[1];
                     const helioZ = b.pos[2] - sun.pos[2];
 
                     historyData[b.name].push({
                         t: year,
-                        x: Number(helioX.toFixed(8)), 
+                        x: Number(helioX.toFixed(8)),
                         y: Number(helioY.toFixed(8)),
                         z: Number(helioZ.toFixed(8))
                     });
                 });
             }
         }
-
-        fs.writeFileSync(filename, JSON.stringify(historyData, null, 2));
-        console.log(`Successfully generated Heliocentric file: ${filename}!`);
+        
+        console.log("Simulation complete. Output Data Structure:");
+        console.log(historyData);
     }
 }
+
+// Instantiate the test engine
+const sim = new solarSystemEngine();
+
+// Seed baseline values (Sun, Earth, Mars, and Hygeia as a pure perturber)
+sim.addBody("Sun", 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+sim.addBody("Earth", 3.003489e-6, -0.1685, 0.9684, -0.00004, -0.0172, -0.0030, 0.0);
+sim.addBody("Mars", 3.227151e-7, 1.324, -0.543, -0.021, 0.002, 0.014, 0.0001);
+sim.addBody("Hygeia", 4.34e-11, 2.5, 1.2, -0.3, -0.008, 0.007, 0.001, true);
+
+// Run for 100 years, 0.25 day steps, logging every 25 years
+sim.runTest(100, 0.25, 25);
